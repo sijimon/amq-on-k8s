@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: activemq-broker-config
+data:
+  activemq.xml: |
+    <!-- Apache ActiveMQ configuration file for broker -->
+    <beans
+      xmlns="http://www.springframework.org/schema/beans"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+      http://activemq.apache.org/schema/core http://activemq.apache.org/schema/core/activemq-core.xsd">
+
+        <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+            <property name="locations">
+                <value>file:${activemq.conf}/credentials.properties</value>
+            </property>
+        </bean>
+        <bean id="logQuery" class="io.fabric8.insight.log.log4j.Log4jLogQuery"
+          lazy-init="false" scope="singleton"
+          init-method="start" destroy-method="stop">
+        </bean>
+      <broker xmlns="http://activemq.apache.org/schema/core" brokerName="broker1" useJmx="true" dataDirectory="${activemq.data}">
+        <destinationPolicy>
+            <policyMap>
+              <policyEntries>
+                <policyEntry topic=">" >
+                  <pendingMessageLimitStrategy>
+                    <constantPendingMessageLimitStrategy limit="1000"/>
+                  </pendingMessageLimitStrategy>
+                </policyEntry>
+              </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+        <managementContext>
+            <managementContext createConnector="false"/>
+        </managementContext>
+        <persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"/>
+        </persistenceAdapter>
+          <systemUsage>
+            <systemUsage>
+                <memoryUsage>
+                    <memoryUsage percentOfJvmHeap="70" />
+                </memoryUsage>
+                <storeUsage>
+                    <storeUsage limit="100 gb"/>
+                </storeUsage>
+                <tempUsage>
+                    <tempUsage limit="50 gb"/>
+                </tempUsage>
+            </systemUsage>
+        </systemUsage>
+         <transportConnectors>
+            <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+        </transportConnectors>
+
+        <shutdownHooks>
+            <bean xmlns="http://www.springframework.org/schema/beans" class="org.apache.activemq.hooks.SpringContextHook" />
+        </shutdownHooks>
+      </broker>
+      <import resource="jetty.xml"/>
+    </beans>
+
+---
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: activemq-pv
+spec:
+  capacity:
+    storage: 8Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: standard
+  hostPath:
+    path: /minikube-host/data
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-service
+  labels:
+    app: activemq
+    broker: broker
+spec:
+  type: NodePort
+  selector:
+    app: activemq
+    broker: broker
+  ports:
+    - name: proto
+      protocol: TCP
+      port: 61616
+      targetPort: 61616
+      nodePort: 32000
+    - name: web
+      protocol: TCP
+      port: 8161
+      targetPort: 8161
+      nodePort: 32001
+
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: activemq-broker
+  labels:
+    app: activemq
+    broker: broker
+spec:
+  serviceName: broker
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activemq
+      broker: broker
+  template:
+    metadata:
+      labels:
+        app: activemq
+        broker: broker
+    spec:
+      containers:
+        - name: activemq
+          image: vromero/activemq-artemis:latest
+          ports:
+            - containerPort: 61616
+              name: proto
+            - containerPort: 8161
+              name: web
+          volumeMounts:
+            - name: data1
+              mountPath: /opt/activemq/data
+            - name: config-volume1
+              mountPath: /opt/activemq/conf/activemq.xml
+              subPath: activemq.xml
+      volumes:
+        - name: config-volume1
+          configMap:
+            name: activemq-broker-config
+            items:
+                - key: activemq.xml
+                  path: activemq.xml
+        - name: data1
+          persistentVolumeClaim:
+            claimName: data1
+  volumeClaimTemplates:
+        - metadata:
+            name: data1
+          spec:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 8Gi

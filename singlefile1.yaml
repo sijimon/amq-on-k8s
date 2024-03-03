@@ -1,0 +1,203 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: activemq-broker-config
+data:
+  activemq.xml: |-
+    <?xml version="1.0"?>
+    <configuration xmlns="urn:activemq" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xi="http://www.w3.org/2001/XInclude" xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
+      <core xmlns="urn:activemq:core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq:core ">
+        <name>artemismaster</name>
+        <persistence-enabled>true</persistence-enabled>
+        <journal-type>ASYNCIO</journal-type>
+        <paging-directory>data/paging</paging-directory>
+        <bindings-directory>data/bindings</bindings-directory>
+        <journal-directory>data/journal</journal-directory>
+        <large-messages-directory>data/large-messages</large-messages-directory>
+        <journal-datasync>true</journal-datasync>
+        <journal-min-files>2</journal-min-files>
+        <journal-pool-files>10</journal-pool-files>
+        <journal-device-block-size>4096</journal-device-block-size>
+        <journal-file-size>10M</journal-file-size>
+        <journal-buffer-timeout>48000</journal-buffer-timeout>
+        <journal-max-io>4096</journal-max-io>
+        <disk-scan-period>5000</disk-scan-period>
+        <max-disk-usage>90</max-disk-usage>
+        <critical-analyzer>true</critical-analyzer>
+        <critical-analyzer-timeout>120000</critical-analyzer-timeout>
+        <critical-analyzer-check-period>60000</critical-analyzer-check-period>
+        <critical-analyzer-policy>HALT</critical-analyzer-policy>
+        <page-sync-timeout>463999</page-sync-timeout>
+        <acceptors>
+          <acceptor name="artemis">tcp://0.0.0.0:61616?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;amqpMinLargeMessageSize=102400;protocols=CORE,AMQP,STOMP,HORNETQ,MQTT,OPENWIRE;useEpoll=true;amqpCredits=1000;amqpLowCredits=300;amqpDuplicateDetection=true</acceptor>
+          <acceptor name="amqp">tcp://0.0.0.0:5672?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;protocols=AMQP;useEpoll=true;amqpCredits=1000;amqpLowCredits=300;amqpMinLargeMessageSize=102400;amqpDuplicateDetection=true</acceptor>
+          <acceptor name="stomp">tcp://0.0.0.0:61613?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;protocols=STOMP;useEpoll=true</acceptor>
+          <acceptor name="hornetq">tcp://0.0.0.0:5445?anycastPrefix=jms.queue.;multicastPrefix=jms.topic.;protocols=HORNETQ,STOMP;useEpoll=true</acceptor>
+          <acceptor name="mqtt">tcp://0.0.0.0:1883?tcpSendBufferSize=1048576;tcpReceiveBufferSize=1048576;protocols=MQTT;useEpoll=true</acceptor>
+        </acceptors>
+        <security-settings>
+          <security-setting match="#">
+            <permission type="createNonDurableQueue" roles="amq"/>
+            <permission type="deleteNonDurableQueue" roles="amq"/>
+            <permission type="createDurableQueue" roles="amq"/>
+            <permission type="deleteDurableQueue" roles="amq"/>
+            <permission type="createAddress" roles="amq"/>
+            <permission type="deleteAddress" roles="amq"/>
+            <permission type="consume" roles="amq"/>
+            <permission type="browse" roles="amq"/>
+            <permission type="send" roles="amq"/>
+            <permission type="manage" roles="amq"/>
+          </security-setting>
+        </security-settings>
+        <address-settings>
+          <address-setting match="activemq.management#">
+            <dead-letter-address>DLQ</dead-letter-address>
+            <expiry-address>ExpiryQueue</expiry-address>
+            <redelivery-delay>0</redelivery-delay>
+            <max-size-bytes>-1</max-size-bytes>
+            <message-counter-history-day-limit>10</message-counter-history-day-limit>
+            <address-full-policy>PAGE</address-full-policy>
+            <auto-create-queues>true</auto-create-queues>
+            <auto-create-addresses>true</auto-create-addresses>
+            <auto-create-jms-queues>true</auto-create-jms-queues>
+            <auto-create-jms-topics>true</auto-create-jms-topics>
+          </address-setting>
+          <address-setting match="#">
+            <dead-letter-address>DLQ</dead-letter-address>
+            <expiry-address>ExpiryQueue</expiry-address>
+            <redelivery-delay>0</redelivery-delay>
+            <max-size-bytes>-1</max-size-bytes>
+            <message-counter-history-day-limit>10</message-counter-history-day-limit>
+            <address-full-policy>PAGE</address-full-policy>
+            <auto-create-queues>true</auto-create-queues>
+            <auto-create-addresses>true</auto-create-addresses>
+            <auto-create-jms-queues>true</auto-create-jms-queues>
+            <auto-create-jms-topics>true</auto-create-jms-topics>
+          </address-setting>
+        </address-settings>
+        <addresses>
+          <address name="DLQ">
+            <anycast>
+              <queue name="DLQ"/>
+            </anycast>
+          </address>
+          <address name="ExpiryQueue">
+            <anycast>
+              <queue name="ExpiryQueue"/>
+            </anycast>
+          </address>
+        </addresses>
+      </core>
+    </configuration>
+
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: activemq-dashboard-credentials
+type: Opaque
+data:
+  username: YWRtaW4=   # Base64 encoded "admin"
+  password: cGFzc3dvcmQxMjM=   # Base64 encoded "password123"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: activemq-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: broker-service
+  labels:
+    app: activemq
+    broker: broker
+spec:
+  type: NodePort
+  selector:
+    app: activemq
+    broker: broker
+  ports:
+    - name: proto
+      protocol: TCP
+      port: 61616
+      targetPort: 61616
+      nodePort: 32000
+    - name: web
+      protocol: TCP
+      port: 8161
+      targetPort: 8161
+      nodePort: 32001
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: activemq-broker
+  labels:
+    app: activemq
+    broker: broker
+spec:
+  serviceName: broker
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activemq
+      broker: broker
+  template:
+    metadata:
+      labels:
+        app: activemq
+        broker: broker
+    spec:
+      containers:
+        - name: activemq
+          image: vromero/activemq-artemis:latest
+          ports:
+            - containerPort: 61616
+              name: proto
+            - containerPort: 8161
+              name: web
+          env:
+            - name: ARTEMIS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: activemq-dashboard-credentials
+                  key: username
+            - name: ARTEMIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: activemq-dashboard-credentials
+                  key: password    
+          volumeMounts:
+            - name: config-volume1
+              mountPath: /opt/activemq/conf/activemq.xml
+              subPath: activemq.xml
+      volumes:
+        - name: config-volume1
+          configMap:
+            name: activemq-broker-config
+            items:
+              - key: activemq.xml
+                path: activemq.xml
+        - name: data1
+          persistentVolumeClaim:
+            claimName: activemq-pvc
+  volumeClaimTemplates:
+    - metadata:
+        name: data1
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 8Gi
